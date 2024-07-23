@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="cortado_core",
-    version="1.3.27",
+    version="1.3.29",
     author="Daniel Schuster",
     author_email="daniel.schuster@fit.fraunhofer.de",
     # package_dir={"": "cortado-core"},
@@ -23,6 +23,8 @@ setup(
         "cortado_core.alignments.prefix_alignments",
         "cortado_core.alignments.prefix_alignments.variants",
         "cortado_core.alignments.suffix_alignments",
+        "cortado_core.alignments.unfolding",
+        "cortado_core.alignments.unfolding.obj",
         "cortado_core.subprocess_discovery",
         "cortado_core.subprocess_discovery.subtree_mining",
         "cortado_core.subprocess_discovery.concurrency_trees",
@@ -51,7 +53,7 @@ setup(
         "cycler",
         "antlr4-python3-runtime==4.8",
         "networkx==3.0rc1",
-        "pm4py==2.4.1",
+        "pm4py>=2.4.1",
         "ortools",
         "tqdm==4.64.1",
         "scikit-learn==1.1.3",

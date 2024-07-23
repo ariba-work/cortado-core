@@ -21,6 +21,8 @@ class Group(list):
         lst: tuple = (),
         infix_type: InfixType = InfixType.NOT_AN_INFIX,
         id: int = None,
+        alignment_eid: str = None,
+        is_sync_alignment_group=False,
     ):
         """
 
@@ -36,6 +38,8 @@ class Group(list):
         self.performance = {"wait_time": None, "service_time": None}
         self.infix_type: InfixType = infix_type
         self.id: int = id
+        self.alignment_eid: str = alignment_eid
+        self.is_sync_alignment_group = is_sync_alignment_group
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -143,23 +147,14 @@ class Group(list):
 
 class SequenceGroup(Group):
     def serialize(self, include_performance=True):
-        if include_performance:
-            return {
-                "follows": [
-                    e.serialize(include_performance=include_performance) for e in self
-                ],
-                "performance": self.performance,
-                "infix_type": self.infix_type,
-                "id": self.id,
-            }
-        else:
-            return {
-                "follows": [
-                    e.serialize(include_performance=include_performance) for e in self
-                ],
-                "infix_type": self.infix_type,
-                "id": self.id,
-            }
+        return {
+            "follows": [
+                e.serialize(include_performance=include_performance) for e in self
+            ],
+            **({"performance": self.performance} if include_performance else {}),
+            "infix_type": self.infix_type.value,
+            "id": self.id,
+        }
 
     def __hash__(self):
         temp_tuple_with_infix = tuple(self) + (self.infix_type,)
@@ -178,8 +173,8 @@ class SequenceGroup(Group):
         # note that fragment is always of type SequenceGroup currently
         # even if the length of the Sequence is only 1, thus we can
         # do the check for prefix/postfix as follows
-        isPrefix = isRootNode and list(fragment) == self[0 : fragment.list_length()]
-        isPostfix = isRootNode and list(fragment) == self[-fragment.list_length() :]
+        isPrefix = isRootNode and list(fragment) == self[0: fragment.list_length()]
+        isPostfix = isRootNode and list(fragment) == self[-fragment.list_length():]
 
         if infixType == InfixType.PREFIX:
             return 1 if isPrefix else 0
@@ -240,25 +235,15 @@ class SequenceGroup(Group):
 
 class ParallelGroup(Group):
     def serialize(self, include_performance=True):
-        if include_performance:
-            return {
-                "parallel": [
-                    e.serialize(include_performance=include_performance)
-                    for e in sorted(self)
-                ],
-                "performance": self.performance,
-                "infix_type": self.infix_type,
-                "id": self.id,
-            }
-        else:
-            return {
-                "parallel": [
-                    e.serialize(include_performance=include_performance)
-                    for e in sorted(self)
-                ],
-                "infix_type": self.infix_type,
-                "id": self.id,
-            }
+        return {
+            "parallel": [
+                e.serialize(include_performance=include_performance)
+                for e in sorted(self)
+            ],
+            **({"performance": self.performance} if include_performance else {}),
+            "infix_type": self.infix_type.value,
+            "id": self.id,
+        }
 
     def __hash__(self):
         temp_tuple_with_infix = tuple(sorted(self)) + (self.infix_type,)
@@ -310,21 +295,14 @@ class ParallelGroup(Group):
 
 class ChoiceGroup(Group):
     def serialize(self, include_performance=True):
-        if include_performance:
-            return {
-                "choice": [
-                    e.serialize(include_performance=include_performance)
-                    for e in sorted(self)
-                ],
-                "performance": self.performance,
-            }
-        else:
-            return {
-                "choice": [
-                    e.serialize(include_performance=include_performance)
-                    for e in sorted(self)
-                ]
-            }
+        return {
+            "choice": [
+                e.serialize(include_performance=include_performance)
+                for e in sorted(self)
+            ],
+            **({"performance": self.performance} if include_performance else {}),
+            "performance": self.performance,
+        }
 
     def __hash__(self):
         return tuple(sorted(self)).__hash__()
@@ -375,21 +353,13 @@ class ChoiceGroup(Group):
 
 class FallthroughGroup(Group):
     def serialize(self, include_performance=True):
-        if include_performance:
-            return {
-                "fallthrough": [
-                    e.serialize(include_performance=include_performance)
-                    for e in sorted(self)
-                ],
-                "performance": self.performance,
-            }
-        else:
-            return {
-                "fallthrough": [
-                    e.serialize(include_performance=include_performance)
-                    for e in sorted(self)
-                ]
-            }
+        return {
+            "fallthrough": [
+                e.serialize(include_performance=include_performance)
+                for e in sorted(self)
+            ],
+            **({"performance": self.performance} if include_performance else {})
+        }
 
     def __hash__(self):
         return tuple(sorted(self)).__hash__()
@@ -440,23 +410,14 @@ class FallthroughGroup(Group):
 
 class LoopGroup(Group):
     def serialize(self, include_performance=True):
-        if include_performance:
-            return {
-                "loop": [
-                    e.serialize(include_performance=include_performance)
-                    for e in sorted(self)
-                ],
-                "performance": self.performance,
-                "infix_type": self.infix_type,
-            }
-        else:
-            return {
-                "loop": [
-                    e.serialize(include_performance=include_performance)
-                    for e in sorted(self)
-                ],
-                "infix_type": self.infix_type,
-            }
+        return {
+            "loop": [
+                e.serialize(include_performance=include_performance)
+                for e in sorted(self)
+            ],
+            **({"performance": self.performance} if include_performance else {}),
+            "infix_type": self.infix_type.value,
+        }
 
     def __hash__(self):
         temp_tuple_with_infix = tuple(self) + (self.infix_type,)
@@ -482,7 +443,7 @@ class SkipGroup(Group):
             "skip": [
                 e.serialize(include_performance=include_performance) for e in self
             ],
-            "infix_type": self.infix_type,
+            "infix_type": self.infix_type.value,
         }
 
     def __hash__(self):
@@ -512,15 +473,14 @@ class LeafGroup(Group):
         elif self[0] == ARTIFICAL_START_NAME:
             return {"start": True}
 
-        if include_performance:
-            return {
-                "leaf": sorted(self),
-                "performance": self.performance if include_performance else None,
-                "infix_type": self.infix_type,
-                "id": self.id,
-            }
-        else:
-            return {"leaf": sorted(self), "infix_type": self.infix_type, "id": self.id}
+        return {
+            "leaf": sorted(self),
+            **({"performance": self.performance} if include_performance else {}),
+            "infix_type": self.infix_type.value,
+            "id": self.id,
+            "alignment_eid": self.alignment_eid,
+            "is_sync_alignment_leaf": self.is_sync_alignment_group,
+        }
 
     def __hash__(self):
         temp_tuple_with_infix = tuple(sorted(self)) + (self.infix_type,)
@@ -587,7 +547,13 @@ def parallel_cut(G_follows, G_parallel):
 
 def split_graph(G_follows, G_parallel):
     if len(G_follows.nodes) == 1:
-        return LeafGroup(list(G_follows.nodes))
+        leaf = LeafGroup(map(lambda x: str(x), G_follows.nodes))
+        try:
+            leaf.alignment_eid = list(G_follows.nodes)[0].eid
+            leaf.is_sync_alignment_group = list(G_follows.nodes)[0].is_synchronous
+        except AttributeError:
+            pass
+        return leaf
     groups = sequence_cut(G_follows, G_parallel)
     if groups == None:
         groups = parallel_cut(G_follows, G_parallel)
