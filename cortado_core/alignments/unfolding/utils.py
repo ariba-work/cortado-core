@@ -33,6 +33,7 @@ class UnfoldingAlignmentResult:
         total_duration: float = 0,
         visited=0,
         queued=0,
+        time_taken_potext=0,
     ):
         self.final_events = alignment.final_events
         self.alignment_costs = alignment.lowest_cost
@@ -42,6 +43,7 @@ class UnfoldingAlignmentResult:
         self.final_event_name = list(map(lambda x: x.name, alignment.final_events))
         self.visited_events = visited
         self.queued_events = queued
+        self.time_taken_potext = time_taken_potext
 
 
 def add_final_state(

@@ -10,6 +10,7 @@ from pm4py import PetriNet, Marking
 from pm4py.objects.petri_net.utils.petri_utils import add_arc_from_to
 
 from cortado_core.alignments.unfolding.obj.branching_process import BranchingProcess
+from cortado_core.alignments.unfolding.obj.time_tracker import TimeTracker
 from cortado_core.alignments.unfolding.utils import (
     add_final_state,
     UnfoldingAlignment,
@@ -28,6 +29,7 @@ class UnfoldingAlgorithm:
         cost_function: dict[PetriNet.Transition, int],
         trace_net: PetriNet,
         trace_net_fm: Marking = None,
+        time_tracker: TimeTracker =None,
     ):
         self.start_time = time.time()
         self.cost_function = cost_function
@@ -56,6 +58,8 @@ class UnfoldingAlgorithm:
 
         self.visited = 0
         self.queued = 0
+
+        self.time_tracker = time_tracker if time_tracker else TimeTracker()
 
     def _init_search(self):
         # print('\ninitializing search...')
@@ -298,6 +302,8 @@ class UnfoldingAlgorithm:
 
         # print(f'\ncalculating possible extensions for {cset}')
 
+        start_time = time.time()
+
         if self.early_stop(cset):
             return
 
@@ -328,6 +334,8 @@ class UnfoldingAlgorithm:
             tmp = cset.copy()
             tmp.append(self.prefix.conditions[i])
             self.calculate_possible_extensions(tmp)
+
+        self.time_tracker.add_time(time.time() - start_time)
 
     def compute_mark(
         self, event: BranchingProcess.OccurrenceNet.Event
@@ -378,25 +386,6 @@ class UnfoldingAlgorithm:
         m = self.compute_mark(e)
         e.mark = m.union(e.mapped_transition.postset)
         # print(f'mark: {m}')
-
-        # directed unfolding cost function
-        if self.unfold_with_heuristic:
-
-            source = filter(
-                lambda x: x.name[0] != SKIP,
-                m.union(e.mapped_transition.postset)
-            )
-
-            source_places_in_trace_net = frozenset(map(
-                lambda x: x.mapped_place,
-                source
-            ))
-
-            e.local_configuration.h = self.compute_h(
-                source_places_in_trace_net
-            )
-            # print(f'h_sum for {e}: {e.local_configuration.h}')
-            # e.h_sum = self.compute_h(m)
 
         # print(e.local_configuration.events)
         self.prefix.events.append(e)
@@ -487,5 +476,5 @@ class UnfoldingAlgorithm:
         #     print(f'alignment: {self.alignment.final_events}, total cost: {self.alignment.lowest_cost}')
 
         return UnfoldingAlignmentResult(
-            self.alignment, len(self.cutoffs), self.prefix, elapsed_time
+            self.alignment, len(self.cutoffs), self.prefix, elapsed_time, self.visited, self.queued, time_taken_potext=self.time_tracker.get_total_time()
         )

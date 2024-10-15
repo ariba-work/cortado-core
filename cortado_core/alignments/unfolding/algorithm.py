@@ -27,7 +27,7 @@ def unfold_sync_net(
     if cost_function is None:
         cost_function = construct_standard_cost_function(sync_net, SKIP)
 
-    # improved = False
+    improved = False
 
     if not improved:
         algo = UnfoldingAlgorithm(
@@ -46,8 +46,8 @@ def unfold_sync_net(
     # print(f'(queued, visited): ({alignment.queued_events}, {alignment.visited_events})')
 
     # draw_unfolded_alignment(alignment, f'unfolded_alignment_{bid}')
-    # #
-    # # # draw prefix
+    # # #
+    # # # # draw prefix
     # save_prefix_as_png(alignment.generated_prefix, f'prefix{bid}')
 
     results = {
@@ -57,6 +57,7 @@ def unfold_sync_net(
         "deviation_deps": [],
         "time_taken": alignment.total_duration,
         "(queued, visited)": (alignment.queued_events, alignment.visited_events),
+        "time_taken_potext": alignment.time_taken_potext,
     }
 
     # for log_graph, model_graph, sync_moves in process_unfolded_alignment(alignment):

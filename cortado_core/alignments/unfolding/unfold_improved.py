@@ -160,6 +160,8 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
         """
         # print(f'calculating possible extensions (improved) for condition {c}')
 
+        start_time = time.time()
+
         if isinstance(c, list):
             return
 
@@ -209,6 +211,8 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
 
                     # Add the event if it passes all checks
                     self.add_event(t, list(tup) + [c])
+
+        self.time_tracker.add_time(time.time() - start_time)
 
     def is_co_set(
         self,
@@ -314,5 +318,5 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
         # print('cutoffs found:', self.cutoffs)
 
         return UnfoldingAlignmentResult(
-            self.alignment, len(self.cutoffs), self.prefix, elapsed_time, self.visited, self.queued
+            self.alignment, len(self.cutoffs), self.prefix, elapsed_time, self.visited, self.queued, time_taken_potext=self.time_tracker.get_total_time()
         )

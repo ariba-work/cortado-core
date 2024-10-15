@@ -1,10 +1,12 @@
+import csv
+import os
 import random
 import string
 from os.path import join
 
 import click as click
 import pm4py
-from pm4py import PetriNet, Marking, convert_to_petri_net
+from pm4py import PetriNet, Marking, convert_to_petri_net, write_pnml
 from pm4py import save_vis_petri_net
 from pm4py.objects.conversion.process_tree.variants.to_petri_net import clean_duplicate_transitions
 from pm4py.objects.log.importer.xes.importer import apply as xes_import
@@ -20,6 +22,9 @@ from cortado_core.alignments.unfolding.algorithm import unfold_sync_net
 from cortado_core.utils.constants import PartialOrderMode
 from cortado_core.utils.petri_net_utils import get_partial_trace_net_from_trace
 
+from pm4py.objects.petri_net.exporter import exporter as pn_exporter
+
+header = ['variant', 'trace_idx', 'trace_length', 'time_taken', 'time_taken_potext', 'queued_events', 'visited_events', 'alignment_costs']
 
 def main():
     # create places for model net
@@ -108,65 +113,68 @@ def main():
 @click.option('--path', '-p', help='Path to the data directory.')
 @click.option('--log', '-l', help='Name of the event log.')
 @click.option('--model', '-m', help='Name of the process model.')
-def compute_unfolding_based_alignments(path: str, log: str, model: str):
+@click.option('--heuristics', '-h', help='0/1 to run with heuristics.')
+def compute_unfolding_based_alignments(path: str, log: str, model: str, heuristics: int):
 
-    # pt1 = pm4py.read_ptml(join(f'.', path, model))
-    # model_net, model_im, model_fm = convert_to_petri_net(pt1)
+    with_heuristic = bool(int(heuristics))
 
-    # model_net = clean_duplicate_transitions(model_net)
+    print(f'running experiment for with heuristics={with_heuristic}..')
 
-
-    # save_vis_petri_net(model_net, model_im, model_fm, f'data/viz/sync_product/model.png')
     model_net, model_im, model_fm = petri_importer.apply(join(f'.', path, model))
+
+    save_vis_petri_net(model_net, model_im, model_fm, f'data/viz/sync_product/model.png')
+
     event_log = xes_import(join(f'.', path, log))
 
     if (
         DEFAULT_START_TIMESTAMP_KEY not in event_log[0][0]
     ):
-        event_log = to_interval(event_log)[:]
+        event_log = to_interval(event_log)[0:1]
 
-    total_duration = 0
+    print(f'total number of traces: {len(event_log)}')
 
-    for trace_idx, trace in enumerate(event_log, 1):
+    with open(f'experiments/results/{model}.csv', mode='a', newline='') as output:
+
+        writer = csv.writer(output)
+
+        for trace_idx, trace in enumerate(event_log, 1):
+
+            # build trace net
+            net, im, fm = get_partial_trace_net_from_trace(trace, PartialOrderMode.REDUCTION, False)
+
+            print('jere')
+
+            # build SPN
+            sync_prod, sync_im, sync_fm, sync_trans = construct_synchronous_product(net, im, fm, model_net, model_im, model_fm, SKIP)
+
+            # pn_exporter.apply(sync_prod, sync_im, f'data/viz/sync_product/sync_prod_{trace_idx}.pnml', sync_fm)
+
+            # save_vis_petri_net(sync_prod, sync_im, sync_fm, f'data/viz/sync_product/sync_prod_{trace_idx}.png')
+            # save_vis_petri_net(net, im, fm, f'data/viz/sync_product/trace_{trace_idx}.png')
+
+            result = unfold_sync_net(sync_prod, sync_im, sync_fm, sync_trans, bid=str(trace_idx), trace_net=net, trace_net_fm=fm,
+                                     with_heuristic=with_heuristic)
+
+            output = [
+                heuristics,
+                trace_idx,
+                len(trace),
+                result["time_taken"],
+                result['time_taken_potext'],
+                result["(queued, visited)"][0],
+                result["(queued, visited)"][1],
+                result["costs"],
+            ]
+
+            print(output)
+
+            writer.writerow(output)
+
+        print(f'completed for model={model}, closing file')
+
+        output.close()
 
 
-
-        # build trace net
-        net, im, fm = get_partial_trace_net_from_trace(trace, PartialOrderMode.REDUCTION, False)
-
-        # save_vis_petri_net(net, im, fm, f'data/viz/sync_product/log.png')
-        # trace_order_relations = get_partial_order_relations_from_trace(trace)
-
-        # build SPN
-        sync_prod, sync_im, sync_fm, sync_trans = construct_synchronous_product(net, im, fm, model_net, model_im, model_fm, SKIP)
-        # save_vis_petri_net(sync_prod, sync_im, sync_fm, f'data/viz/sync_product/${trace_idx}.png')
-
-        # compute alignments
-        # print(f'\nunfolding sync prod net for trace:{trace_idx}')
-
-        # print(f'{trace_idx}::')
-        result = unfold_sync_net(sync_prod, sync_im, sync_fm, sync_trans, bid=str(trace_idx), trace_net=net, trace_net_fm=fm)
-        # print(f'time taken: {result["time_taken"]}')
-
-        total_duration += result["time_taken"]
-
-        # for log_graph, model_graph, sync_moves in process_unfolded_alignment(alignment):
-        #     print(list(log_graph.nodes()))
-        #     print(list(model_graph.nodes()))
-        #
-        # print(f'#nodes explored: {len(alignment.generated_prefix.events)}')
-        # print(f'time taken: {round(result["time_taken"] * 1000, 3)} ms')
-
-        # # process alignments
-        # draw_finite_prefix(alignment.generated_prefix, f'data/viz/alignments/unfolding/${trace_idx}',
-        #                    label=f'Alignment costs: {alignment.alignment_costs} '
-        #                          f'\nfor the event: e{alignment.final_event_name}'
-        #                          f'\nnumber of nodes in prefix: {len(alignment.generated_prefix.conditions)}'
-        #                          f'\ntime to compute: {round(alignment.total_duration * 1000, 3)} ms')
-
-        # draw_unfolded_alignment(alignment, f'data/viz/alignments/unfolding/${trace_idx}_alignment')
-
-    print(f'total time taken: {round(total_duration * 1000, 3)} ms')
 
 @click.command()
 @click.option('--tree1', '-t1', help='Path to tree 1')
