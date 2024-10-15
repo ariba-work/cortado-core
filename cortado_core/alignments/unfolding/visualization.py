@@ -29,6 +29,31 @@ def draw_unfolded_alignment(alignment: UnfoldingAlignmentResult, file_path: str,
     g.render(filename=file_path, view=False, format="png")
 
 
+def save_prefix_as_png(prefix, filename):
+    # Initialize a Graphviz Digraph
+    dot = graphviz.Digraph(comment='Unfolding Prefix')
+
+    # Add nodes for conditions
+    for condition in prefix.conditions:
+        dot.node(f'c{condition.name}', label=f'c{condition.name}/{condition.mapped_place.name}', shape='circle')
+
+    # Add nodes for events
+    for event in prefix.events:
+        dot.node(f'e{event.name}', label=f'e{event.name}/{event.mapped_transition.label}', shape='box',
+                 fillcolor=_get_move_color(event.mapped_transition.name),
+                 style="filled")
+
+    # Add edges from conditions to events
+    for event in prefix.events:
+        for condition in event.preset:
+            dot.edge(f'c{condition.name}', f'e{event.name}')
+        for condition in event.postset:
+            dot.edge(f'e{event.name}', f'c{condition.name}')
+
+    # Render the Graphviz Digraph to a PNG file
+    dot.render(filename, format='png')
+
+
 def __get_move_name(move):
     if isinstance(move, BranchingProcess.OccurrenceNet.Event):
         return f'e{move.name}'

@@ -1,10 +1,11 @@
 from collections import Counter
 from copy import deepcopy
 from functools import cmp_to_key
-from itertools import pairwise, product, combinations
+from itertools import product, combinations
 from typing import List, Mapping
 
 import networkx as nx
+from more_itertools import pairwise
 
 from cortado_core.models.infix_type import InfixType
 from cortado_core.utils.cgroups_graph import ConcurrencyGroup

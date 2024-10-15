@@ -3,9 +3,10 @@ import heapq
 import itertools
 import time
 from collections import deque
-from typing import FrozenSet, Dict, Set, Tuple
+from typing import FrozenSet, Dict, Set, Tuple, List
 
-from pm4py import PetriNet
+from cvxopt import matrix
+from pm4py import PetriNet, Marking
 from pm4py.objects.petri_net.utils.petri_utils import add_arc_from_to
 
 from cortado_core.alignments.unfolding.obj.branching_process import BranchingProcess
@@ -14,12 +15,22 @@ from cortado_core.alignments.unfolding.utils import (
     UnfoldingAlignment,
     UnfoldingAlignmentResult,
 )
+from pm4py.objects.petri_net.utils.incidence_matrix import construct as inc_mat_construct
+from cortado_core.alignments.unfolding.heuristic_utils import compute_exact_heuristic, vectorize_initial_final_cost, \
+    vectorize_matrices
 
 
 class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
     def __init__(self, unfold_with_heuristic: bool = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.unfold_with_heuristic = unfold_with_heuristic
+
+        self.incidence_matrix = inc_mat_construct(self.net)
+        self.ini_vec, self.fin_vec, self.cost_vec = \
+            vectorize_initial_final_cost(self.incidence_matrix, self.initial_marking, Marking({self.tp: 1}),
+                                         self.cost_function)
+        self.a_matrix, self.g_matrix, self.h_cvx = vectorize_matrices(self.incidence_matrix, self.net)
+        self.cost_vec = matrix([x * 1.0 for x in self.cost_vec])
 
         # self.incidence_matrix = inc_mat_construct(self.net)
         # self.ini_vec, self.fin_vec, self.cost_vec = \
@@ -49,14 +60,56 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
 
         self.comatrix = {}
 
+        im = set()
         # add conditions possible in initial marking
         for p_init in list(self.initial_marking.keys()):
             self.add_condition(p_init)
+            im.add(p_init)
+        self.induced_markings[frozenset(im)] = BranchingProcess.OccurrenceNet.Event(name="dummy")
 
         for c in self.prefix.conditions:
             self.calculate_possible_extensions(c)
 
         # print('initialization done')
+
+    def add_event(
+        self,
+        mapped_transition: PetriNet.Transition,
+        cset: List[BranchingProcess.OccurrenceNet.Condition],
+    ):
+        """
+        adds an event to the queue and to the prefix, extending from the given set of conditions
+        Args:
+            mapped_transition ():
+            cset ():
+
+        Returns:
+
+        """
+
+        self.y += 1
+        e = BranchingProcess.OccurrenceNet.Event(
+            mapped_transition, name=self.y, cost=self.cost_function[mapped_transition]
+        )
+
+        self.extend_cset_to_event(cset, e)
+
+        m = self.compute_mark(e)
+        e.mark = m.union(e.mapped_transition.postset)
+        # print(f'mark: {m}')
+
+        # directed unfolding cost function
+        if self.unfold_with_heuristic:
+            h, x = compute_exact_heuristic(self.net, self.a_matrix, self.h_cvx, self.g_matrix, self.cost_vec,
+                                           self.incidence_matrix, Marking({p: 1 for p in e.mark}), self.fin_vec)
+            e.local_configuration.h = h
+
+        # print(e.local_configuration.events)
+        self.prefix.events.append(e)
+
+        heapq.heappush(self.queue, e)
+        self.queued += 1
+        # print(f'added event {e} to queue, extended from {cset}')
 
     def add_condition(self, mapped_place: PetriNet.Place):
         """
@@ -87,8 +140,7 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
         preset: Set[BranchingProcess.OccurrenceNet.Condition],
     ):
         """
-        Adds an event to the queue and to the prefix, extending from the given set of conditions
-        and additionally checks if the event is not already added
+        checks if the event is not already added
 
         """
         cset_postset = set(
@@ -125,7 +177,8 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
                 if "inverse_map" in s.properties:
                     for c_prime in s.properties["inverse_map"]:
                         if self.is_co_set((c_prime, c)):
-                            if self.event_already_exists(t, {c_prime, c}):
+                            if (self.event_already_exists(t, {c_prime, c})
+                                or len(c_prime.preset.intersection(self.cutoffs)) != 0):
                                 continue
 
                             self.add_event(t, [c_prime, c])
@@ -134,37 +187,28 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
                 # set of places excluding the mapped place
                 s_n = [arc.source for arc in t.in_arcs if arc.source != c.mapped_place]
 
-                # cartesian product of inverse maps of all places in s_n
-                k = {
-                    tup
-                    for tup in itertools.product(
-                        *[
-                            sn_i.properties["inverse_map"]
-                            if "inverse_map" in sn_i.properties
-                            else []
-                            for sn_i in s_n
-                        ]
-                    )
-                }
+                # Efficient Cartesian product generation and filtering
+                for tup in itertools.product(
+                    *[
+                        sn_i.properties["inverse_map"]
+                        if "inverse_map" in sn_i.properties else []
+                        for sn_i in s_n
+                    ]
+                ):
+                    # Ensure that each element in the tuple is not in conflict with `c`
+                    if not all(self.is_co_set((c, c_prime)) for c_prime in tup):
+                        continue
 
-                # filter k to only include tuples where each of its element is not in conflict with c
-                k = {
-                    tup
-                    for tup in k
-                    for idx, c_prime in enumerate(tup)
-                    if self.is_co_set((c, c_prime))
-                }
+                    # Ensure that no pair of elements in the tuple is in conflict with each other
+                    if not all(self.is_co_set(cond_pair) for cond_pair in itertools.combinations(tup, 2)):
+                        continue
 
-                # filter k to only include tuples where each pair of its elements is not in conflict with each other
-                for tup in k:
-                    if all(
-                        self.is_co_set(cond_pair)
-                        for cond_pair in itertools.combinations(tup, 2)
-                    ):
-                        if self.event_already_exists(t, set(tup).union({c})):
-                            continue
+                    # Check if the event already exists before adding
+                    if self.event_already_exists(t, set(tup).union({c})):
+                        continue
 
-                        self.add_event(t, list(tup) + [c])
+                    # Add the event if it passes all checks
+                    self.add_event(t, list(tup) + [c])
 
     def is_co_set(
         self,
@@ -180,13 +224,17 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
 
         # print('checking co-set...')
 
-        if tuple(cset) in self.comatrix:
+        if cset in self.comatrix:
             # print('co-set found in comatrix')
-            return self.comatrix[tuple(cset)]
+            return self.comatrix[cset]
+
+        if cset[::-1] in self.comatrix:
+            # print('co-set found in comatrix')
+            return self.comatrix[cset[::-1]]
 
         res = super().is_co_set(list(cset))
 
-        self.comatrix[tuple(cset)] = res
+        self.comatrix[cset] = res
 
         return res
 
@@ -211,12 +259,13 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
         while self.queue:
             # print(f'queue size: {len(self.queue)}')
             e: BranchingProcess.OccurrenceNet.Event = heapq.heappop(self.queue)
+            self.visited += 1
             # print(f'popped event {e} from queue')
 
             # if cost of path already exceeded, no need to extend, cutoff
             if (
                 self.alignment.lowest_cost is not None
-                and e.local_configuration.total_cost + e.h_sum
+                and e.local_configuration.total_cost + e.local_configuration.h
                 > self.alignment.lowest_cost
             ):
                 # print('cost of path already exceeded, adding to cutoff')
@@ -225,12 +274,12 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
 
             # if `e` is final event, we found one of the shortest paths, add to alignment
             if e.mapped_transition.name == "tr":
-                print(f"final event found!")
+                # print(f"final event found!")
                 self.alignment.final_events.add(e)
-                print(f"transition costs: {e.local_configuration.total_cost}")
-                print(f"heuristics costs: {e.h_sum}")
+                # print(f"transition costs: {e.local_configuration.total_cost}")
+                # print(f"heuristics costs: {e.h_sum}")
                 # print(self.prefix.events)
-                self.alignment.lowest_cost = e.local_configuration.total_cost + e.h_sum
+                self.alignment.lowest_cost = e.local_configuration.total_cost
                 if self.stop_at_first:
                     break
 
@@ -240,17 +289,19 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
             if len(e.local_configuration.events.intersection(self.cutoffs)) == 0:
                 condts_to_add = []
 
-                # add `e` and its conditions for its postset to prefix
+                # add `e`'s postset conditions to prefix, extending from `e` one by one
                 for s in e.mapped_transition.postset:
                     c = self.add_condition(s)
                     condts_to_add.append(c)
                     add_arc_from_to(e, c, self.prefix)
 
-                for c in condts_to_add:
-                    self.calculate_possible_extensions(c)
-
                 if self.is_cutoff(e):
                     self.cutoffs.add(e)
+
+                else:
+                    # calculate possible extensions for each NEW condition added
+                    for c in condts_to_add:
+                        self.calculate_possible_extensions(c)
 
         # print(f'\nsearch done.')
         elapsed_time = time.time() - self.start_time
@@ -260,6 +311,8 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
         # if self.alignment.lowest_cost is not None:
         #     print(f'alignment: {self.alignment.final_events}, total cost: {self.alignment.lowest_cost}')
 
+        # print('cutoffs found:', self.cutoffs)
+
         return UnfoldingAlignmentResult(
-            self.alignment, len(self.cutoffs), self.prefix, elapsed_time
+            self.alignment, len(self.cutoffs), self.prefix, elapsed_time, self.visited, self.queued
         )

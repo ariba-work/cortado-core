@@ -4,6 +4,8 @@ import time
 from collections import deque
 from typing import Set, List, Dict, FrozenSet
 
+from cachetools import cached
+from cachetools.keys import hashkey
 from pm4py import PetriNet, Marking
 from pm4py.objects.petri_net.utils.petri_utils import add_arc_from_to
 
@@ -13,15 +15,19 @@ from cortado_core.alignments.unfolding.utils import (
     UnfoldingAlignment,
     UnfoldingAlignmentResult,
 )
+from cortado_core.utils.constants import SKIP
 
 
 class UnfoldingAlgorithm:
     def __init__(
         self,
         sync_net: PetriNet,
+        sync_trans: Set[PetriNet.Transition],
         initial_marking: Marking,
         final_marking: Marking,
         cost_function: dict[PetriNet.Transition, int],
+        trace_net: PetriNet,
+        trace_net_fm: Marking = None,
     ):
         self.start_time = time.time()
         self.cost_function = cost_function
@@ -29,6 +35,9 @@ class UnfoldingAlgorithm:
         self.final_marking = final_marking
 
         self.net = sync_net
+        self.sync_trans = sync_trans
+        self.trace_net = trace_net
+        self.trace_net_fm = trace_net_fm.keys()
 
         _, tp = add_final_state(self.net, self.final_marking, self.cost_function)
         self.tp = tp
@@ -45,6 +54,9 @@ class UnfoldingAlgorithm:
         self.stop_at_first = True
         self.unfold_with_heuristic = None
 
+        self.visited = 0
+        self.queued = 0
+
     def _init_search(self):
         # print('\ninitializing search...')
 
@@ -57,18 +69,66 @@ class UnfoldingAlgorithm:
         ] = {}
         self.alignment = UnfoldingAlignment()
 
+        im = set()
         # add conditions possible in initial marking
         for p_init in list(self.initial_marking.keys()):
             self.add_condition(p_init)
+            im.add(p_init)
+        self.induced_markings[frozenset(im)] = BranchingProcess.OccurrenceNet.Event(name="dummy")
 
-        # add possible extensions for the initial conditions
+        # add possible extensions for each initial condition
         curr_conditions = self.prefix.conditions.copy()
         for c in curr_conditions:
             self.calculate_possible_extensions([c])
 
         # print('\ninitialization done')
 
+    @cached(
+        cache={},
+        key=lambda self, m: hashkey(m),
+    )
+    def d_sum(
+        self,
+        m: frozenset[PetriNet.Place],
+    ):
+        # print(f'computing d_sum for {m} and {m_prime}')
+        if m.issubset(self.trace_net_fm):
+            return 0
+
+        if len(m) == 1:
+            place = next(iter(m))  # get the single element in m
+
+            if place is None:
+                return 0
+
+            t = next(iter(place.postset))  # will only be a single transition since it's a trace net (causal net)
+            if t not in self.sync_trans:
+                return 10000 + self.d_sum(frozenset(t.postset))
+            else:
+                return self.d_sum(frozenset(t.postset))
+
+        else:
+            return max(
+                self.d_sum(frozenset({p})) for p in m
+            )
+
+    def compute_h(
+        self,
+        mark: frozenset[PetriNet.Place],
+    ):
+        if len(mark) == 0:
+            return 0
+        else:
+            return self.d_sum(mark)
+
     def add_condition(self, mapped_place: PetriNet.Place):
+        """
+        adds a condition to the list of prefix conditions with name as `x+1`
+        :param mapped_place:
+        :type mapped_place:
+        :return:
+        :rtype:
+        """
         self.x += 1
         c = BranchingProcess.OccurrenceNet.Condition(
             mapped_place=mapped_place, name=self.x
@@ -105,12 +165,36 @@ class UnfoldingAlgorithm:
     def is_co_set(self, cset: List[BranchingProcess.OccurrenceNet.Condition]):
         """
         deep-search to look for conflicts or causality - the most naive way
+
+        ### Main Steps in `is_co_set` Method
+
+        1. **Trivial Co-set Check**:
+           - If the set of conditions (`cset`) is empty or has only one condition, it is trivially a co-set. Return `True`.
+
+        2. **Initialize Stack and Visit Counter**:
+           - Initialize a stack to keep track of conditions to be processed.
+           - Increment the global visit counter.
+
+        3. **Mark Initial Conditions and Their Predecessors**:
+           - For each condition in `cset`, mark it as visited.
+           - If the condition has a predecessor, mark the predecessor and add it to the stack.
+
+        4. **Depth-First Search for Conflicts**:
+           - While the stack is not empty, pop a condition from the stack.
+           - For each predecessor of the popped condition, check if it has already been visited in the current search.
+             - If a visited condition is found, return `False` (indicating a conflict).
+             - Otherwise, mark the predecessor and add its predecessor to the stack if it exists.
+
+        5. **Return Result**:
+           - If no conflicts are found during the search, return `True`.
+
         :param cset:
         :type cset:
         :return:
         :rtype:
         """
 
+        # if the set is empty or has only one condition, it is trivially a co-set
         if len(cset) < 2:
             return True
 
@@ -147,6 +231,7 @@ class UnfoldingAlgorithm:
         early stop according to MacMillan's improvements, either:
             1. if `cset` is not `co-set` (conditions are not in 'co-relation' or are in 'self-conflict'), or
             2. if there exists no transition whose preset contains `place(cset)`
+                (no transition is enabled by the conditions)
         :param cset: set of conditions to compare
         :type cset: List[Condition]
         :return: True if no such transition is found or the conditions are not in co-relation, False otherwise
@@ -182,6 +267,28 @@ class UnfoldingAlgorithm:
         calculates possible extensions for a given set of conditions. combinatorial problem of selecting sets of
         conditions such that their mapped places enable a transition in the net. Since the combinatorial problem can
         be time expensive, improvements to stop early and to avoid redundant extensions are implemented.
+
+        ### Main Steps
+
+        1. **Early Stop Check**:
+           - Call the `early_stop` method with the given set of conditions (`cset`).
+           - If `early_stop` returns `True`, exit the method.
+
+        2. **Initialize Mapped Places and Postset**:
+           - Create a set of mapped places from the conditions in `cset`.
+           - Create a set of postset events by intersecting the postsets of all conditions in `cset`.
+
+        3. **Add Events for Transitions**:
+           - Iterate over all transitions in the Petri net.
+           - For each transition, check if its preset is exactly equal to the set of mapped places.
+           - If the preset matches, check if an event for this transition already exists in the postset.
+           - If no such event exists, add a new event to the queue and the prefix.
+
+        4. **Depth-First Search for Extensions**:
+           - Iterate over all conditions in the prefix that are older than the conditions in `cset`.
+           - For each condition, create a new set by adding this condition to `cset`.
+           - Recursively call `calculate_possible_extensions` with the new set of conditions.
+
         Args:
             cset (): set of conditions to extend
 
@@ -194,6 +301,7 @@ class UnfoldingAlgorithm:
         if self.early_stop(cset):
             return
 
+        # Initialize Mapped Places and Postset
         mapped_places = set(map(lambda x: x.mapped_place, cset))
         cset_postset = set(
             functools.reduce(
@@ -273,22 +381,36 @@ class UnfoldingAlgorithm:
 
         # directed unfolding cost function
         if self.unfold_with_heuristic:
-            e.compute_h_sum(
-                m.union(e.mapped_transition.postset), {self.tp}, self.cost_function
+
+            source = filter(
+                lambda x: x.name[0] != SKIP,
+                m.union(e.mapped_transition.postset)
             )
-            # print(f'h_sum: {e.h_sum}')
+
+            source_places_in_trace_net = frozenset(map(
+                lambda x: x.mapped_place,
+                source
+            ))
+
+            e.local_configuration.h = self.compute_h(
+                source_places_in_trace_net
+            )
+            # print(f'h_sum for {e}: {e.local_configuration.h}')
             # e.h_sum = self.compute_h(m)
 
         # print(e.local_configuration.events)
         self.prefix.events.append(e)
 
         heapq.heappush(self.queue, e)
+        self.queued += 1
         # print(f'added event {e} to queue, extended from {cset}')
 
     def is_cutoff(self, event: BranchingProcess.OccurrenceNet.Event):
         """
         checks if the given event is a cutoff, i.e. if its induced marking is already induced by some other event in the
-        prefix. If so, the event is a cutoff and the prefix need not be extended on this path.
+        prefix. If so, the event is a cutoff and the prefix need not be extended on this path. If not, the marking is
+        added to the induced markings dictionary for future reference.
+
         Args:p
             event (): event to check
 
@@ -300,6 +422,7 @@ class UnfoldingAlgorithm:
             return False
 
         mark = self.compute_mark(event)
+        # print(f'mark for {event}: {mark}')
 
         if mark in self.induced_markings:
             # print(f'cutoff found: {event} is a cutoff, with mark {mark}')
@@ -322,6 +445,7 @@ class UnfoldingAlgorithm:
 
         while self.queue:
             e: BranchingProcess.OccurrenceNet.Event = heapq.heappop(self.queue)
+            self.visited += 1
             # print(f'popped event {e} from queue')
 
             # if cost of path already exceeded, no need to extend, cutoff
@@ -334,19 +458,19 @@ class UnfoldingAlgorithm:
 
             # if `e` is final event, we found one of the shortest paths, add to alignment
             if e.mapped_transition.name == "tr":
-                print(f"final event found!")
+                # print(f"final event found!")
                 self.alignment.final_events.add(e)
                 self.alignment.lowest_cost = e.local_configuration.total_cost
                 if self.stop_at_first:
                     break
 
             if len(e.local_configuration.events.intersection(self.cutoffs)) == 0:
-                # add `e` and its conditions for its postset to prefix
+                # add `e`'s postset conditions to prefix, extending from `e` one by one
                 for s in e.mapped_transition.postset:
                     c = self.add_condition(s)
                     add_arc_from_to(e, c, self.prefix)
 
-                # identify possible extensions for the new conditions
+                # identify possible extensions for ALL the conditions in updated conditions
                 curr_conditions = self.prefix.conditions.copy()
                 for c in curr_conditions:
                     self.calculate_possible_extensions([c])

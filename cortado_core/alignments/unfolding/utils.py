@@ -3,6 +3,8 @@ from typing import Set
 
 import networkx as nx
 import numpy as np
+from cachetools import cached
+from cachetools.keys import hashkey
 from pm4py import Marking, PetriNet
 from pm4py.objects.petri_net.utils.petri_utils import add_arc_from_to
 
@@ -29,6 +31,8 @@ class UnfoldingAlignmentResult:
         num_cutoffs,
         generated_prefix: BranchingProcess.OccurrenceNet = None,
         total_duration: float = 0,
+        visited=0,
+        queued=0,
     ):
         self.final_events = alignment.final_events
         self.alignment_costs = alignment.lowest_cost
@@ -36,6 +40,8 @@ class UnfoldingAlignmentResult:
         self.total_duration = total_duration
         self.generated_prefix = generated_prefix
         self.final_event_name = list(map(lambda x: x.name, alignment.final_events))
+        self.visited_events = visited
+        self.queued_events = queued
 
 
 def add_final_state(

@@ -144,16 +144,16 @@ def get_partial_trace_net_from_trace(
 
 def get_partial_order_from_trace(
     trace: Trace,
-    mode: PartialOrderMode = PartialOrderMode.NONE,
+    mode: PartialOrderMode = PartialOrderMode.REDUCTION,
     key_start_timestamp: str = "start_timestamp",
     key_end_timestamp: str = "time:timestamp",
     activity_key: str = "concept:name",
 ) -> tuple[list[tuple[str, str]], list[str], list[str]]:
-    events = {e: (e[key_start_timestamp], e[key_end_timestamp]) for e in trace}
+    events = [(e, (e[key_start_timestamp], e[key_end_timestamp])) for e in trace]
     inserted_events = {}
 
     partial_order = nx.DiGraph()
-    for event_idx, (event, (start, end)) in enumerate(events.items()):
+    for event_idx, (event, (start, end)) in enumerate(events):
         event_id = f"t_{event[activity_key]}_{event_idx}"
         partial_order.add_node(event_id)
         inserted_events[event_id] = (start, end)
