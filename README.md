@@ -18,7 +18,7 @@ see https://github.com/cortado-tool/cortado-core?tab=readme-ov-file#setup
 
 ## Usage for standalone conformance checking (without having to use the webapp)
 
-To align a model and log <log-name>, cd to `cortado_core/alignments/unfolding/`, make sure there is a `results/` folder, and run:
+To align a model and log, cd to `cortado_core/alignments/unfolding/`, make sure there is a `results/` folder in <directory-path>, and run:
 
 ```
 python test.py unfolding-based-alignments -p <directory-path> -l <log-name> -m <model-name> -v <variant>
@@ -29,7 +29,7 @@ python test.py unfolding-based-alignments -p <directory-path> -l <log-name> -m <
 - _model-name_: name of the model (.pnml)
 - _variant_: possible values - 0 or 1 or 2 to run ERV[|>c] (baseline), ERV[|>c] (optimized) or ERV[|>h], respectively.
   
-saves results of each alignment to a .csv file in `<directory-path>/results/`
+saves results of each alignment to a .csv file in `<directory-path>/results/<model-name>.csv`
 
 Header: ['variant', 'trace_idx', 'trace_length', 'time_taken', 'time_taken_potext', 'queued_events', 'visited_events', 'alignment_costs']
 
