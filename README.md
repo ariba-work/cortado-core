@@ -7,7 +7,7 @@
 **Cortado-core is a Python library that implements various algorithms and methods for interactive/incremental process discovery.**
 Cortado-core is part of the software tool Cortado.
 
-This is a fork of the main repository implementing UNFOLDING-BASED ALIGNMENTS - a work within a Master's thesis on - 'Partial Order-based Alignments via Petri net Unfolding'
+This is a fork of the main repository implementing UNFOLDING-BASED ALIGNMENTS - a work within a Master's thesis on - '_Partial Order-based Alignments via Petri net Unfolding_'
 
 It replaces the sequentialization-based conformance checking in Cortado with unfolding-based alignments along with additional features.
 
