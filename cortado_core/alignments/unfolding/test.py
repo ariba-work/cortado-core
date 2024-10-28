@@ -22,9 +22,22 @@ from cortado_core.alignments.unfolding.algorithm import unfold_sync_net
 from cortado_core.utils.constants import PartialOrderMode
 from cortado_core.utils.petri_net_utils import get_partial_trace_net_from_trace
 
+import signal
 from pm4py.objects.petri_net.exporter import exporter as pn_exporter
 
 header = ['variant', 'trace_idx', 'trace_length', 'time_taken', 'time_taken_potext', 'queued_events', 'visited_events', 'alignment_costs']
+
+
+# Define a timeout handler
+def timeout_handler(signum, frame):
+    raise TimeoutError("Trace processing timed out")
+
+# Set the timeout duration (in seconds)
+timeout_duration = 100  # Adjust as needed
+
+# Register the timeout handler
+signal.signal(signal.SIGALRM, timeout_handler)
+
 
 def main():
     # create places for model net
@@ -96,17 +109,65 @@ def main():
     fm_model[p2] = 1
 
     # create synchronous product net
-    sync_net, sync_im, sync_fm = construct(log_net, im_log, fm_log, model_net, im_model, fm_model, SKIP)
+    sync_net, sync_im, sync_fm, sync_trans = construct(log_net, im_log, fm_log, model_net, im_model, fm_model, SKIP)
 
     # Visualize the synchronous net
-    save_vis_petri_net(sync_net, sync_im, sync_fm, 'spn.png')
+    # save_vis_petri_net(sync_net, sync_im, sync_fm, 'spn.png')
 
     # Call unfold_sync_net with the Petri net and markings
-    results = unfold_sync_net(sync_net, sync_im, sync_fm)
+    results = unfold_sync_net(sync_net, sync_im, sync_fm, sync_trans)
 
     # Print the results
     print("Alignment Results:")
     print(results)
+
+def process_trace(trace_idx, trace, model_net, model_im, model_fm, with_heuristic):
+    try:
+        # Set the alarm
+        signal.alarm(timeout_duration)
+
+        # build trace net
+        net, im, fm = get_partial_trace_net_from_trace(trace, PartialOrderMode.REDUCTION, False)
+
+        print(f'{trace_idx}::')
+
+        # build SPN
+        sync_prod, sync_im, sync_fm, sync_trans = construct_synchronous_product(net, im, fm, model_net, model_im, model_fm, SKIP)
+
+        result = unfold_sync_net(sync_prod, sync_im, sync_fm, sync_trans, bid=str(trace_idx), trace_net=net, trace_net_fm=fm,
+                                 with_heuristic=with_heuristic)
+
+        output = [
+            with_heuristic,
+            trace_idx,
+            len(trace),
+            result["time_taken"],
+            result['time_taken_potext'],
+            result["(queued, visited)"][0],
+            result["(queued, visited)"][1],
+            result["costs"],
+        ]
+
+        return output
+
+    except TimeoutError:
+        print(f"Trace {trace_idx} processing timed out")
+        return [
+            with_heuristic,
+            trace_idx,
+            len(trace),
+            "timeout",
+            "timeout",
+            "timeout",
+            "timeout",
+            "timeout",
+        ]
+
+    finally:
+        # Disable the alarm
+        signal.alarm(0)
+
+
 
 
 @click.command()
@@ -122,14 +183,14 @@ def compute_unfolding_based_alignments(path: str, log: str, model: str, heuristi
 
     model_net, model_im, model_fm = petri_importer.apply(join(f'.', path, model))
 
-    save_vis_petri_net(model_net, model_im, model_fm, f'data/viz/sync_product/model.png')
+    # save_vis_petri_net(model_net, model_im, model_fm, f'data/viz/sync_product/model.png')
 
     event_log = xes_import(join(f'.', path, log))
 
     if (
         DEFAULT_START_TIMESTAMP_KEY not in event_log[0][0]
     ):
-        event_log = to_interval(event_log)[0:1]
+        event_log = to_interval(event_log)[8:9]
 
     print(f'total number of traces: {len(event_log)}')
 
@@ -138,41 +199,12 @@ def compute_unfolding_based_alignments(path: str, log: str, model: str, heuristi
         writer = csv.writer(output)
 
         for trace_idx, trace in enumerate(event_log, 1):
-
-            # build trace net
-            net, im, fm = get_partial_trace_net_from_trace(trace, PartialOrderMode.REDUCTION, False)
-
-            print('jere')
-
-            # build SPN
-            sync_prod, sync_im, sync_fm, sync_trans = construct_synchronous_product(net, im, fm, model_net, model_im, model_fm, SKIP)
-
-            # pn_exporter.apply(sync_prod, sync_im, f'data/viz/sync_product/sync_prod_{trace_idx}.pnml', sync_fm)
-
-            # save_vis_petri_net(sync_prod, sync_im, sync_fm, f'data/viz/sync_product/sync_prod_{trace_idx}.png')
-            # save_vis_petri_net(net, im, fm, f'data/viz/sync_product/trace_{trace_idx}.png')
-
-            result = unfold_sync_net(sync_prod, sync_im, sync_fm, sync_trans, bid=str(trace_idx), trace_net=net, trace_net_fm=fm,
-                                     with_heuristic=with_heuristic)
-
-            output = [
-                heuristics,
-                trace_idx,
-                len(trace),
-                result["time_taken"],
-                result['time_taken_potext'],
-                result["(queued, visited)"][0],
-                result["(queued, visited)"][1],
-                result["costs"],
-            ]
-
-            print(output)
-
-            writer.writerow(output)
+            result = process_trace(trace_idx, trace, model_net, model_im, model_fm, with_heuristic)
+            writer.writerow(result)
 
         print(f'completed for model={model}, closing file')
 
-        output.close()
+    output.close()
 
 
 

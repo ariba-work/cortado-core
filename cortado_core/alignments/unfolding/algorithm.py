@@ -27,7 +27,7 @@ def unfold_sync_net(
     if cost_function is None:
         cost_function = construct_standard_cost_function(sync_net, SKIP)
 
-    improved = False
+    # improved = False
 
     if not improved:
         algo = UnfoldingAlgorithm(

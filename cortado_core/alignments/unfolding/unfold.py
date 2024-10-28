@@ -39,7 +39,6 @@ class UnfoldingAlgorithm:
         self.net = sync_net
         self.sync_trans = sync_trans
         self.trace_net = trace_net
-        self.trace_net_fm = trace_net_fm.keys()
 
         _, tp = add_final_state(self.net, self.final_marking, self.cost_function)
         self.tp = tp
