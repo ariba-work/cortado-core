@@ -34,3 +34,12 @@ saves results of each alignment to a .csv file in `<directory-path>/results/<mod
 Header: ['variant', 'trace_idx', 'trace_length', 'time_taken', 'time_taken_potext', 'queued_events', 'visited_events', 'alignment_costs']
 
 Timeout (in seconds) is adjustable for each single alignment. Change the value at: https://github.com/ariba-work/cortado-core/blob/4c6a9e35d7d0bec71bdff0e579782b2b0cda1840/cortado_core/alignments/unfolding/constants.py#L1
+
+## Script to add noise to an event log
+
+The [following script](https://github.com/ariba-work/cortado-core/blob/main/cortado_core/alignments/unfolding/add_noise.py) adds noise to a given event log from levels of 0-70% in steps of 10%
+
+Specify the correct location of the event log at 
+https://github.com/ariba-work/cortado-core/blob/d1ef631132a809687b632cd647f11bbd3045b030/cortado_core/alignments/unfolding/add_noise.py#L127
+
+and run `python add_noise.py` to create 7 log files for each noise level
