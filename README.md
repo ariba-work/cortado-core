@@ -42,4 +42,4 @@ The [following script](https://github.com/ariba-work/cortado-core/blob/main/cort
 Specify the correct location of the event log at 
 https://github.com/ariba-work/cortado-core/blob/d1ef631132a809687b632cd647f11bbd3045b030/cortado_core/alignments/unfolding/add_noise.py#L127
 
-and run `python add_noise.py` to create 7 log files for each noise level
+and run `python add_noise.py` to create a log file for each noise level
