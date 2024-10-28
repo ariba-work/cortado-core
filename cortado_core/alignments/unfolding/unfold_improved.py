@@ -32,13 +32,6 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
         self.a_matrix, self.g_matrix, self.h_cvx = vectorize_matrices(self.incidence_matrix, self.net)
         self.cost_vec = matrix([x * 1.0 for x in self.cost_vec])
 
-        # self.incidence_matrix = inc_mat_construct(self.net)
-        # self.ini_vec, self.fin_vec, self.cost_vec = \
-        #     vectorize_initial_final_cost(self.incidence_matrix, self.initial_marking, self.final_marking,
-        #                                  self.cost_function)
-        # self.a_matrix, self.g_matrix, self.h_cvx = vectorize_matrices(self.incidence_matrix, self.net)
-        # self.cost_vec = matrix([x * 1.0 for x in self.cost_vec])
-
     def _init_search(self):
         """
         Initializes the search by creating the initial branching process, queue
@@ -46,8 +39,6 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
         as they are added to the prefix
 
         """
-
-        # print('\ninitializing search...')
 
         self.prefix = BranchingProcess.OccurrenceNet()
         self.process = BranchingProcess(self.net, self.prefix, self.cost_function)
@@ -70,7 +61,6 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
         for c in self.prefix.conditions:
             self.calculate_possible_extensions(c)
 
-        # print('initialization done')
 
     def add_event(
         self,
@@ -96,7 +86,6 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
 
         m = self.compute_mark(e)
         e.mark = m.union(e.mapped_transition.postset)
-        # print(f'mark: {m}')
 
         # directed unfolding cost function
         if self.unfold_with_heuristic:
@@ -104,12 +93,10 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
                                            self.incidence_matrix, Marking({p: 1 for p in e.mark}), self.fin_vec)
             e.local_configuration.h = h
 
-        # print(e.local_configuration.events)
         self.prefix.events.append(e)
 
         heapq.heappush(self.queue, e)
         self.queued += 1
-        # print(f'added event {e} to queue, extended from {cset}')
 
     def add_condition(self, mapped_place: PetriNet.Place):
         """
@@ -129,8 +116,6 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
         ):  # exploiting the `properties` dict to store `inverse map`
             mapped_place.properties["inverse_map"] = deque()
         mapped_place.properties["inverse_map"].append(c)
-
-        # print(f'added condition {c} to prefix')
 
         return c
 
@@ -158,7 +143,6 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
         `Theorie und Praxis der Netzentfaltungen als Grundlage für die Verifikation nebenläufiger Systeme` by Roemer
 
         """
-        # print(f'calculating possible extensions (improved) for condition {c}')
 
         start_time = time.time()
 
@@ -226,14 +210,10 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
         if not, update the result in comatrix
         """
 
-        # print('checking co-set...')
-
         if cset in self.comatrix:
-            # print('co-set found in comatrix')
             return self.comatrix[cset]
 
         if cset[::-1] in self.comatrix:
-            # print('co-set found in comatrix')
             return self.comatrix[cset[::-1]]
 
         res = super().is_co_set(list(cset))
@@ -241,12 +221,6 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
         self.comatrix[cset] = res
 
         return res
-
-    #
-    # def compute_h(self, m: frozenset[UPetriNet.UPlace]):
-    #     marking = {p: 1 for p in m}
-    #     return compute_exact_heuristic(self.net, self.a_matrix, self.h_cvx, self.g_matrix, self.cost_vec,
-    #                                    self.incidence_matrix, marking, self.fin_vec)
 
     def search(self):
         """
@@ -261,11 +235,9 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
         self._init_search()
 
         while self.queue:
-            # print(f'queue size: {len(self.queue)}')
+
             e: BranchingProcess.OccurrenceNet.Event = heapq.heappop(self.queue)
             self.visited += 1
-            # print(f'popped event {e} from queue')
-
             # if cost of path already exceeded, no need to extend, cutoff
             if (
                 self.alignment.lowest_cost is not None
@@ -278,18 +250,11 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
 
             # if `e` is final event, we found one of the shortest paths, add to alignment
             if e.mapped_transition.name == "tr":
-                # print(f"final event found!")
                 self.alignment.final_events.add(e)
-                # print(f"transition costs: {e.local_configuration.total_cost}")
-                # print(f"heuristics costs: {e.h_sum}")
-                # print(self.prefix.events)
                 self.alignment.lowest_cost = e.local_configuration.total_cost
                 if self.stop_at_first:
                     break
 
-            # print(f'${e}: {e.preset}')
-            # print(e.local_configuration.events)
-            # print(self.cutoffs)
             if len(e.local_configuration.events.intersection(self.cutoffs)) == 0:
                 condts_to_add = []
 
@@ -307,15 +272,7 @@ class UnfoldingAlgorithmImproved(UnfoldingAlgorithm):
                     for c in condts_to_add:
                         self.calculate_possible_extensions(c)
 
-        # print(f'\nsearch done.')
         elapsed_time = time.time() - self.start_time
-        # print(f'time taken: {elapsed_time} seconds')
-        # print(f'cutoffs ({len(self.cutoffs)}): {self.cutoffs}')
-        # print(f'prefix: total events={len(self.prefix.events)}, total conditions={len(self.prefix.conditions)}')
-        # if self.alignment.lowest_cost is not None:
-        #     print(f'alignment: {self.alignment.final_events}, total cost: {self.alignment.lowest_cost}')
-
-        # print('cutoffs found:', self.cutoffs)
 
         return UnfoldingAlignmentResult(
             self.alignment, len(self.cutoffs), self.prefix, elapsed_time, self.visited, self.queued, time_taken_potext=self.time_tracker.get_total_time()

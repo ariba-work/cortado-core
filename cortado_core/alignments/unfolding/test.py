@@ -109,13 +109,13 @@ def main():
     fm_model[p2] = 1
 
     # create synchronous product net
-    sync_net, sync_im, sync_fm, sync_trans = construct(log_net, im_log, fm_log, model_net, im_model, fm_model, SKIP)
+    sync_net, sync_im, sync_fm = construct(log_net, im_log, fm_log, model_net, im_model, fm_model, SKIP)
 
     # Visualize the synchronous net
     # save_vis_petri_net(sync_net, sync_im, sync_fm, 'spn.png')
 
     # Call unfold_sync_net with the Petri net and markings
-    results = unfold_sync_net(sync_net, sync_im, sync_fm, sync_trans)
+    results = unfold_sync_net(sync_net, sync_im, sync_fm)
 
     # Print the results
     print("Alignment Results:")
@@ -132,9 +132,9 @@ def process_trace(trace_idx, trace, model_net, model_im, model_fm, with_heuristi
         print(f'{trace_idx}::')
 
         # build SPN
-        sync_prod, sync_im, sync_fm, sync_trans = construct_synchronous_product(net, im, fm, model_net, model_im, model_fm, SKIP)
+        sync_prod, sync_im, sync_fm = construct_synchronous_product(net, im, fm, model_net, model_im, model_fm, SKIP)
 
-        result = unfold_sync_net(sync_prod, sync_im, sync_fm, sync_trans, bid=str(trace_idx), trace_net=net, trace_net_fm=fm,
+        result = unfold_sync_net(sync_prod, sync_im, sync_fm, bid=str(trace_idx), trace_net=net, trace_net_fm=fm,
                                  with_heuristic=with_heuristic)
 
         output = [
@@ -226,7 +226,7 @@ def compute_unfolding_based_alignments_from_trees(tree1: str, tree2: str):
     # save_vis_petri_net(pn1, im1, fm1, f'data/viz/sync_product/pn1.png')
     # save_vis_petri_net(pn2, im2, fm2, f'data/viz/sync_product/pn2.png')
 
-    sync_prod, sync_im, sync_fm, sync_trans = construct_synchronous_product(pn1, im1, fm1, pn2, im2, fm2, SKIP)
+    sync_prod, sync_im, sync_fm = construct_synchronous_product(pn1, im1, fm1, pn2, im2, fm2, SKIP)
     save_vis_petri_net(sync_prod, sync_im, sync_fm, f'data/viz/sync_product/trees_1_1+1_2.png')
 
     # Generate the reachability graph
@@ -238,7 +238,7 @@ def compute_unfolding_based_alignments_from_trees(tree1: str, tree2: str):
     # Save the visualization as an image or view it directly
     # ts_visualizer.view(gviz)
 
-    result = unfold_sync_net(sync_prod, sync_im, sync_fm, sync_trans)
+    result = unfold_sync_net(sync_prod, sync_im, sync_fm)
     print(f'time taken: {round(result["time_taken"] * 1000, 3)} ms')
     print(f'alignment costs: {result["costs"]}')
 

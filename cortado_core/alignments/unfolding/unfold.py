@@ -23,12 +23,9 @@ class UnfoldingAlgorithm:
     def __init__(
         self,
         sync_net: PetriNet,
-        sync_trans: Set[PetriNet.Transition],
         initial_marking: Marking,
         final_marking: Marking,
         cost_function: dict[PetriNet.Transition, int],
-        trace_net: PetriNet,
-        trace_net_fm: Marking = None,
         time_tracker: TimeTracker =None,
     ):
         self.start_time = time.time()
@@ -37,8 +34,6 @@ class UnfoldingAlgorithm:
         self.final_marking = final_marking
 
         self.net = sync_net
-        self.sync_trans = sync_trans
-        self.trace_net = trace_net
 
         _, tp = add_final_state(self.net, self.final_marking, self.cost_function)
         self.tp = tp
@@ -61,7 +56,6 @@ class UnfoldingAlgorithm:
         self.time_tracker = time_tracker if time_tracker else TimeTracker()
 
     def _init_search(self):
-        # print('\ninitializing search...')
 
         self.prefix = BranchingProcess.OccurrenceNet()
         self.process = BranchingProcess(self.net, self.prefix, self.cost_function)
@@ -83,37 +77,6 @@ class UnfoldingAlgorithm:
         curr_conditions = self.prefix.conditions.copy()
         for c in curr_conditions:
             self.calculate_possible_extensions([c])
-
-        # print('\ninitialization done')
-
-    @cached(
-        cache={},
-        key=lambda self, m: hashkey(m),
-    )
-    def d_sum(
-        self,
-        m: frozenset[PetriNet.Place],
-    ):
-        # print(f'computing d_sum for {m} and {m_prime}')
-        if m.issubset(self.trace_net_fm):
-            return 0
-
-        if len(m) == 1:
-            place = next(iter(m))  # get the single element in m
-
-            if place is None:
-                return 0
-
-            t = next(iter(place.postset))  # will only be a single transition since it's a trace net (causal net)
-            if t not in self.sync_trans:
-                return 10000 + self.d_sum(frozenset(t.postset))
-            else:
-                return self.d_sum(frozenset(t.postset))
-
-        else:
-            return max(
-                self.d_sum(frozenset({p})) for p in m
-            )
 
     def compute_h(
         self,
@@ -138,7 +101,6 @@ class UnfoldingAlgorithm:
         )
         self.prefix.conditions.append(c)
 
-        # print(f'added condition {c} to prefix')
         return c
 
     def add_final_state(self):
@@ -250,7 +212,6 @@ class UnfoldingAlgorithm:
                 break
 
         if not trans_found or not self.is_co_set(cset):
-            # print('early stop: no transition found or not co-set')
             return True
 
         return False
@@ -299,8 +260,6 @@ class UnfoldingAlgorithm:
             void
         """
 
-        # print(f'\ncalculating possible extensions for {cset}')
-
         start_time = time.time()
 
         if self.early_stop(cset):
@@ -321,7 +280,6 @@ class UnfoldingAlgorithm:
             if t.preset == mapped_places:
                 for ev in cset_postset:
                     if ev.mapped_transition == t:
-                        # print(f'extension already exists for {t}')
                         break
 
                 else:
@@ -339,17 +297,12 @@ class UnfoldingAlgorithm:
     def compute_mark(
         self, event: BranchingProcess.OccurrenceNet.Event
     ) -> frozenset[PetriNet.Place]:
-        # print(f'computing mark for {event}')
+
         conf = event.local_configuration.events
         conf_pre = conf_post = set()
 
         for e in conf:
             conf_pre = conf_pre.union(e.preset)
-            conf_post = conf_post.union(e.postset)
-        # print(f'postset for {event} : {conf_post}')
-
-        # print(f'conf_post for {event} : {conf_post}')
-
         # Mark(e) computed as per MacMillan's paper: `Mark(e) = pi((Min(prefix) U [e]*]) - *[e])`
         mark = (
             set(self.prefix.conditions[: len(self.initial_marking.keys())]).union(
@@ -384,14 +337,11 @@ class UnfoldingAlgorithm:
 
         m = self.compute_mark(e)
         e.mark = m.union(e.mapped_transition.postset)
-        # print(f'mark: {m}')
 
-        # print(e.local_configuration.events)
         self.prefix.events.append(e)
 
         heapq.heappush(self.queue, e)
         self.queued += 1
-        # print(f'added event {e} to queue, extended from {cset}')
 
     def is_cutoff(self, event: BranchingProcess.OccurrenceNet.Event):
         """
@@ -410,10 +360,8 @@ class UnfoldingAlgorithm:
             return False
 
         mark = self.compute_mark(event)
-        # print(f'mark for {event}: {mark}')
 
         if mark in self.induced_markings:
-            # print(f'cutoff found: {event} is a cutoff, with mark {mark}')
             return True
         else:
             self.induced_markings[mark] = event
@@ -434,7 +382,6 @@ class UnfoldingAlgorithm:
         while self.queue:
             e: BranchingProcess.OccurrenceNet.Event = heapq.heappop(self.queue)
             self.visited += 1
-            # print(f'popped event {e} from queue')
 
             # if cost of path already exceeded, no need to extend, cutoff
             if (
@@ -466,13 +413,7 @@ class UnfoldingAlgorithm:
                 if self.is_cutoff(e):
                     self.cutoffs.add(e)
 
-        # # print(f'\nsearch done.')
         elapsed_time = time.time() - self.start_time
-        # print(f'time taken: {elapsed_time} seconds')
-        # # print(f'cutoffs ({len(self.cutoffs)}): {self.cutoffs}')
-        # # print(f'prefix: total events={len(self.prefix.events)}, total conditions={len(self.prefix.conditions)}')
-        # if self.alignment.lowest_cost is not None:
-        #     print(f'alignment: {self.alignment.final_events}, total cost: {self.alignment.lowest_cost}')
 
         return UnfoldingAlignmentResult(
             self.alignment, len(self.cutoffs), self.prefix, elapsed_time, self.visited, self.queued, time_taken_potext=self.time_tracker.get_total_time()
