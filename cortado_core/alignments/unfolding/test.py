@@ -121,6 +121,7 @@ def main():
     print("Alignment Results:")
     print(results)
 
+
 def process_trace(trace_idx, trace, model_net, model_im, model_fm, with_heuristic):
     try:
         # Set the alarm
@@ -129,13 +130,10 @@ def process_trace(trace_idx, trace, model_net, model_im, model_fm, with_heuristi
         # build trace net
         net, im, fm = get_partial_trace_net_from_trace(trace, PartialOrderMode.REDUCTION, False)
 
-        print(f'{trace_idx}::')
-
         # build SPN
         sync_prod, sync_im, sync_fm = construct_synchronous_product(net, im, fm, model_net, model_im, model_fm, SKIP)
 
-        result = unfold_sync_net(sync_prod, sync_im, sync_fm, bid=str(trace_idx), trace_net=net, trace_net_fm=fm,
-                                 with_heuristic=with_heuristic)
+        result = unfold_sync_net(sync_prod, sync_im, sync_fm, bid=str(trace_idx), with_heuristic=with_heuristic)
 
         output = [
             with_heuristic,
@@ -168,8 +166,6 @@ def process_trace(trace_idx, trace, model_net, model_im, model_fm, with_heuristi
         signal.alarm(0)
 
 
-
-
 @click.command()
 @click.option('--path', '-p', help='Path to the data directory.')
 @click.option('--log', '-l', help='Name of the event log.')
@@ -182,8 +178,6 @@ def compute_unfolding_based_alignments(path: str, log: str, model: str, heuristi
     print(f'running experiment for with heuristics={with_heuristic}..')
 
     model_net, model_im, model_fm = petri_importer.apply(join(f'.', path, model))
-
-    # save_vis_petri_net(model_net, model_im, model_fm, f'data/viz/sync_product/model.png')
 
     event_log = xes_import(join(f'.', path, log))
 
@@ -207,7 +201,6 @@ def compute_unfolding_based_alignments(path: str, log: str, model: str, heuristi
     output.close()
 
 
-
 @click.command()
 @click.option('--tree1', '-t1', help='Path to tree 1')
 @click.option('--tree2', '-t2', help='Path to tree 2')
@@ -223,25 +216,12 @@ def compute_unfolding_based_alignments_from_trees(tree1: str, tree2: str):
             if t.label is None:
                 t.label = ''.join(random.choices(string.ascii_letters, k=4))
 
-    # save_vis_petri_net(pn1, im1, fm1, f'data/viz/sync_product/pn1.png')
-    # save_vis_petri_net(pn2, im2, fm2, f'data/viz/sync_product/pn2.png')
-
     sync_prod, sync_im, sync_fm = construct_synchronous_product(pn1, im1, fm1, pn2, im2, fm2, SKIP)
     save_vis_petri_net(sync_prod, sync_im, sync_fm, f'data/viz/sync_product/trees_1_1+1_2.png')
-
-    # Generate the reachability graph
-    # ts = reachability_graph.construct_reachability_graph(sync_prod, sync_im)
-    # print(f'Number of states in the reachability graph: {len(ts.states)}')
-    # Visualize the reachability graph using PM4Py's visualization module
-    # gviz = ts_visualizer.apply(ts)
-
-    # Save the visualization as an image or view it directly
-    # ts_visualizer.view(gviz)
 
     result = unfold_sync_net(sync_prod, sync_im, sync_fm)
     print(f'time taken: {round(result["time_taken"] * 1000, 3)} ms')
     print(f'alignment costs: {result["costs"]}')
-
 
 
 @click.group()

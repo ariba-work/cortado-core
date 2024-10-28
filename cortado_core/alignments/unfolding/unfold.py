@@ -303,6 +303,7 @@ class UnfoldingAlgorithm:
 
         for e in conf:
             conf_pre = conf_pre.union(e.preset)
+            conf_post = conf_post.union(e.postset)
         # Mark(e) computed as per MacMillan's paper: `Mark(e) = pi((Min(prefix) U [e]*]) - *[e])`
         mark = (
             set(self.prefix.conditions[: len(self.initial_marking.keys())]).union(
