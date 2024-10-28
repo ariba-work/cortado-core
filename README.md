@@ -11,10 +11,10 @@ This is a fork of the main repository implementing UNFOLDING-BASED ALIGNMENTS - 
 
 It replaces the sequentialization-based conformance checking in Cortado with unfolding-based alignments along with additional features.
 
+Find all the relevant code in `cortado_core/alignments/unfolding/`
+
 ## Setup
 see https://github.com/cortado-tool/cortado-core?tab=readme-ov-file#setup
-
-Find all the relevant code in `cortado_core/alignments/unfolding/`
 
 ## Usage for standalone conformance checking (without having to use the webapp)
 
