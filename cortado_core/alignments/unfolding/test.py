@@ -19,6 +19,8 @@ from pm4py.objects.petri_net.utils.synchronous_product import construct as const
 from pm4py.util.xes_constants import DEFAULT_START_TIMESTAMP_KEY
 
 from cortado_core.alignments.unfolding.algorithm import unfold_sync_net
+from cortado_core.alignments.unfolding.constants import TIMEOUT
+from cortado_core.alignments.unfolding.variants import Variant
 from cortado_core.utils.constants import PartialOrderMode
 from cortado_core.utils.petri_net_utils import get_partial_trace_net_from_trace
 
@@ -33,7 +35,7 @@ def timeout_handler(signum, frame):
     raise TimeoutError("Trace processing timed out")
 
 # Set the timeout duration (in seconds)
-timeout_duration = 100  # Adjust as needed
+timeout_duration = TIMEOUT
 
 # Register the timeout handler
 signal.signal(signal.SIGALRM, timeout_handler)
@@ -122,7 +124,7 @@ def main():
     print(results)
 
 
-def process_trace(trace_idx, trace, model_net, model_im, model_fm, with_heuristic):
+def process_trace(trace_idx, trace, model_net, model_im, model_fm, with_heuristic, improved, variant):
     try:
         # Set the alarm
         signal.alarm(timeout_duration)
@@ -133,10 +135,10 @@ def process_trace(trace_idx, trace, model_net, model_im, model_fm, with_heuristi
         # build SPN
         sync_prod, sync_im, sync_fm = construct_synchronous_product(net, im, fm, model_net, model_im, model_fm, SKIP)
 
-        result = unfold_sync_net(sync_prod, sync_im, sync_fm, bid=str(trace_idx), with_heuristic=with_heuristic)
+        result = unfold_sync_net(sync_prod, sync_im, sync_fm, bid=str(trace_idx), with_heuristic=with_heuristic, improved=improved)
 
         output = [
-            with_heuristic,
+            variant,
             trace_idx,
             len(trace),
             result["time_taken"],
@@ -170,12 +172,28 @@ def process_trace(trace_idx, trace, model_net, model_im, model_fm, with_heuristi
 @click.option('--path', '-p', help='Path to the data directory.')
 @click.option('--log', '-l', help='Name of the event log.')
 @click.option('--model', '-m', help='Name of the process model.')
-@click.option('--heuristics', '-h', help='0/1 to run with heuristics.')
-def compute_unfolding_based_alignments(path: str, log: str, model: str, heuristics: int):
+@click.option('--variant', '-v', help='0/1/2 to run ERV[|>c] (baseline), ERV[|>c] (optimized) or,'
+                                      ' ERV[|>h].')
+def compute_unfolding_based_alignments(path: str, log: str, model: str, variant: int):
 
-    with_heuristic = bool(int(heuristics))
+    variant = Variant(int(variant))
 
-    print(f'running experiment for with heuristics={with_heuristic}..')
+    if variant == Variant.BASELINE:
+        improved = False
+        with_heuristic = False
+
+    elif variant == Variant.OPTIMIZED:
+        improved = True
+        with_heuristic = False
+
+    elif variant == Variant.DIRECTED:
+        improved = True
+        with_heuristic = True
+
+    else:
+        raise ValueError(f'Invalid variant: {variant}')
+
+    print(f'running experiment for {variant}..')
 
     model_net, model_im, model_fm = petri_importer.apply(join(f'.', path, model))
 
@@ -184,16 +202,16 @@ def compute_unfolding_based_alignments(path: str, log: str, model: str, heuristi
     if (
         DEFAULT_START_TIMESTAMP_KEY not in event_log[0][0]
     ):
-        event_log = to_interval(event_log)[8:9]
+        event_log = to_interval(event_log)[:]
 
     print(f'total number of traces: {len(event_log)}')
 
-    with open(f'experiments/results/{model}.csv', mode='a', newline='') as output:
+    with open(join(f'.', path, f'results/{model}.csv'), mode='a', newline='') as output:
 
         writer = csv.writer(output)
 
         for trace_idx, trace in enumerate(event_log, 1):
-            result = process_trace(trace_idx, trace, model_net, model_im, model_fm, with_heuristic)
+            result = process_trace(trace_idx, trace, model_net, model_im, model_fm, with_heuristic, improved, variant)
             writer.writerow(result)
 
         print(f'completed for model={model}, closing file')
