@@ -32,3 +32,5 @@ python test.py unfolding-based-alignments -p <directory-path> -l <log-name> -m <
 saves results of each alignment to a .csv file in `<directory-path>/results/`
 
 Header: ['variant', 'trace_idx', 'trace_length', 'time_taken', 'time_taken_potext', 'queued_events', 'visited_events', 'alignment_costs']
+
+Timeout (in seconds) is adjustable for single alignments on traces. Change the value at: https://github.com/ariba-work/cortado-core/blob/4c6a9e35d7d0bec71bdff0e579782b2b0cda1840/cortado_core/alignments/unfolding/constants.py#L1
